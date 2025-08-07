@@ -33,9 +33,7 @@ import (
 
 type S3Exporter struct {
 	minioClient *minio.Client
-	ctx         context.Context
-
-	rootDir string
+	rootDir     string
 }
 
 func init() {
@@ -97,7 +95,6 @@ func NewS3Exporter(ctx context.Context, opts *exporter.Options, name string, con
 	return &S3Exporter{
 		rootDir:     parsed.Path,
 		minioClient: conn,
-		ctx:         ctx,
 	}, nil
 }
 
@@ -110,7 +107,7 @@ func (p *S3Exporter) CreateDirectory(ctx context.Context, pathname string) error
 }
 
 func (p *S3Exporter) StoreFile(ctx context.Context, pathname string, fp io.Reader, size int64) error {
-	_, err := p.minioClient.PutObject(p.ctx,
+	_, err := p.minioClient.PutObject(ctx,
 		strings.TrimPrefix(p.rootDir, "/"),
 		strings.TrimPrefix(pathname, p.rootDir+"/"),
 		fp, size, minio.PutObjectOptions{})

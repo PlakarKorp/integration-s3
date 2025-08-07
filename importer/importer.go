@@ -36,7 +36,6 @@ import (
 
 type S3Importer struct {
 	minioClient *minio.Client
-	ctx         context.Context
 
 	bucket  string
 	host    string
@@ -104,7 +103,6 @@ func NewS3Importer(ctx context.Context, opts *importer.Options, name string, con
 		scanDir:     scanDir,
 		minioClient: conn,
 		host:        parsed.Host,
-		ctx:         ctx,
 	}, nil
 }
 
@@ -137,7 +135,7 @@ func (p *S3Importer) Scan(ctx context.Context) (<-chan *importer.ScanResult, err
 
 		prefix := strings.TrimPrefix(p.scanDir, "/")
 
-		for object := range p.minioClient.ListObjects(p.ctx, p.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+		for object := range p.minioClient.ListObjects(ctx, p.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
 			// Create a record for each of the parent directories of the object.
 			// Two objects in a same directory will generate the same records for this directory, but the backup layer ignores duplicates.
 			parent := path.Dir("/" + object.Key)
@@ -174,7 +172,7 @@ func (p *S3Importer) Scan(ctx context.Context) (<-chan *importer.ScanResult, err
 				0,
 			)
 			result <- importer.NewScanRecord("/"+object.Key, "", fi, nil, func() (io.ReadCloser, error) {
-				return p.minioClient.GetObject(p.ctx, p.bucket, object.Key, minio.GetObjectOptions{})
+				return p.minioClient.GetObject(ctx, p.bucket, object.Key, minio.GetObjectOptions{})
 			})
 		}
 
