@@ -23,11 +23,11 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/PlakarKorp/kloset/objects"
+	"github.com/PlakarKorp/kloset/params"
 	"github.com/PlakarKorp/kloset/reading"
 	"github.com/PlakarKorp/kloset/storage"
 
@@ -59,51 +59,38 @@ func init() {
 }
 
 func NewStore(ctx context.Context, proto string, storeConfig map[string]string) (storage.Store, error) {
-	var accessKey string
-	if value, ok := storeConfig["access_key"]; !ok {
-		return nil, fmt.Errorf("missing access_key")
-	} else {
-		accessKey = value
-	}
+	var (
+		accessKey       string
+		secretAccessKey string
+		useTls          bool = true
+		insecure        bool
+		storageClass    string
+		location        string
+	)
 
-	var secretAccessKey string
-	if value, ok := storeConfig["secret_access_key"]; !ok {
-		return nil, fmt.Errorf("missing secret_access_key")
-	} else {
-		secretAccessKey = value
-	}
-
-	useSsl := true
-	if value, ok := storeConfig["use_tls"]; ok {
-		tmp, err := strconv.ParseBool(value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid use_tls value")
-		}
-		useSsl = tmp
-	}
-
-	insecure := false
-	if value, ok := storeConfig["tls_insecure_no_verify"]; ok {
-		tmp, err := strconv.ParseBool(value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid tls_insecure_no_verify value")
-		}
-		insecure = tmp
-	}
-
-	storageClass := "STANDARD"
-	if value, ok := storeConfig["storage_class"]; ok {
+	p := params.New()
+	p.String("access_key", &accessKey, params.Required)
+	p.String("secret_access_key", &secretAccessKey, params.Required)
+	p.Bool("use_tls", &useTls, params.Optional)
+	p.Bool("tls_insecure_no_verify", &insecure, params.Optional)
+	p.Func("storage_class", params.Optional, func(value string) error {
 		storageClass = strings.ToUpper(value)
 		if storageClass != "STANDARD" && storageClass != "REDUCED_REDUNDANCY" && storageClass != "STANDARD_IA" && storageClass != "ONEZONE_IA" && storageClass != "INTELLIGENT_TIERING" && storageClass != "GLACIER" && storageClass != "GLACIER_IR" && storageClass != "DEEP_ARCHIVE" {
-			return nil, fmt.Errorf("invalid storage_class value")
+			return fmt.Errorf("invalid storage_class value: %s", value)
 		}
+		return nil
+	})
+	p.String("location", &location, params.Required)
+
+	if err := p.Parse(storeConfig); err != nil {
+		return nil, err
 	}
 
 	return &Store{
-		location:        storeConfig["location"],
+		location:        location,
 		accessKey:       accessKey,
 		secretAccessKey: secretAccessKey,
-		useSsl:          useSsl,
+		useSsl:          useTls,
 		insecure:        insecure,
 		storageClass:    storageClass,
 
