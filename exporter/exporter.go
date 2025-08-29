@@ -19,13 +19,12 @@ package exporter
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/PlakarKorp/kloset/objects"
+	"github.com/PlakarKorp/kloset/params"
 	"github.com/PlakarKorp/kloset/snapshot/exporter"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -61,50 +60,31 @@ func connect(location *url.URL, useSsl, insecure bool, accessKeyID, secretAccess
 }
 
 func NewS3Exporter(ctx context.Context, opts *exporter.Options, name string, config map[string]string) (exporter.Exporter, error) {
-	target := config["location"]
-	var accessKey string
-	if tmp, ok := config["access_key"]; !ok {
-		return nil, fmt.Errorf("missing access_key")
-	} else {
-		accessKey = tmp
+	var (
+		location        *url.URL
+		accessKey       string
+		secretAccessKey string
+		useTls          bool = true
+		insecure        bool
+	)
+
+	p := params.New()
+	p.Url("location", &location, params.Required)
+	p.String("access_key", &accessKey, params.Required)
+	p.String("secret_access_key", &secretAccessKey, params.Required)
+	p.Bool("use_tls", &useTls, params.Optional)
+	p.Bool("tls_insecure_no_verify", &insecure, params.Optional)
+
+	if err := p.Parse(config); err != nil {
+		return nil, err
 	}
 
-	var secretAccessKey string
-	if tmp, ok := config["secret_access_key"]; !ok {
-		return nil, fmt.Errorf("missing secret_access_key")
-	} else {
-		secretAccessKey = tmp
-	}
-
-	useSsl := true
-	if value, ok := config["use_tls"]; ok {
-		tmp, err := strconv.ParseBool(value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid use_tls value")
-		}
-		useSsl = tmp
-	}
-
-	insecure := false
-	if value, ok := config["tls_insecure_no_verify"]; ok {
-		tmp, err := strconv.ParseBool(value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid tls_insecure_no_verify value")
-		}
-		insecure = tmp
-	}
-
-	parsed, err := url.Parse(target)
+	conn, err := connect(location, useTls, insecure, accessKey, secretAccessKey)
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := connect(parsed, useSsl, insecure, accessKey, secretAccessKey)
-	if err != nil {
-		return nil, err
-	}
-
-	err = conn.MakeBucket(ctx, strings.TrimPrefix(parsed.Path, "/"), minio.MakeBucketOptions{})
+	err = conn.MakeBucket(ctx, strings.TrimPrefix(location.Path, "/"), minio.MakeBucketOptions{})
 	if err != nil {
 		if minio.ToErrorResponse(err).Code != "BucketAlreadyOwnedByYou" {
 			return nil, err
@@ -112,7 +92,7 @@ func NewS3Exporter(ctx context.Context, opts *exporter.Options, name string, con
 	}
 
 	return &S3Exporter{
-		rootDir:     parsed.Path,
+		rootDir:     location.Path,
 		minioClient: conn,
 	}, nil
 }
