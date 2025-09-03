@@ -155,6 +155,12 @@ func (p *S3Importer) Scan(ctx context.Context) (<-chan *importer.ScanResult, err
 		prefix := strings.TrimPrefix(p.scanDir, "/")
 
 		for object := range p.minioClient.ListObjects(ctx, p.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+
+			// Some backend actually return _folders_, which they shouldn't so just skip over those.
+			if strings.HasSuffix(object.Key, "/") {
+				continue
+			}
+
 			// Create a record for each of the parent directories of the object.
 			// Two objects in a same directory will generate the same records for this directory, but the backup layer ignores duplicates.
 			parent := path.Dir("/" + object.Key)
