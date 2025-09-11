@@ -130,6 +130,18 @@ func (p *S3Importer) Scan(ctx context.Context) (<-chan *importer.ScanResult, err
 	go func() {
 		defer close(result)
 
+		// First verify that we can connect and that it exists.
+		exists, err := p.minioClient.BucketExists(ctx, p.bucket)
+		if err != nil {
+			result <- importer.NewScanError("/", err)
+			return
+		}
+
+		if !exists {
+			result <- importer.NewScanError("/", fmt.Errorf("bucket %q does not exists", p.bucket))
+			return
+		}
+
 		// Create scandir entries.
 		parent := p.scanDir
 		for {
