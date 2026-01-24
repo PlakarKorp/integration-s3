@@ -38,18 +38,11 @@ import (
 )
 
 type Store struct {
-	minioClient *minio.Client
-	location    string
-	host        string
-	root        string
-	bucket      string
-	prefixDir   string
-
-	useSsl          bool
-	insecure        bool
-	accessKey       string
-	secretAccessKey string
-
+	minioClient  *minio.Client
+	host         string
+	root         string
+	bucket       string
+	prefixDir    string
 	storageClass string
 
 	bufPool sync.Pool
@@ -102,20 +95,41 @@ func NewStore(ctx context.Context, proto string, storeConfig map[string]string) 
 		}
 	}
 
-	u, err := url.Parse(storeConfig["location"])
+	parsed, err := url.Parse(storeConfig["location"])
 	if err != nil {
 		return nil, fmt.Errorf("parse location: %w", err)
 	}
 
+	transport, err := minio.DefaultTransport(useSsl)
+	if err != nil {
+		return nil, err
+	}
+
+	if insecure {
+		transport.TLSClientConfig.InsecureSkipVerify = true
+	}
+
+	minioClient, err := minio.New(parsed.Host, &minio.Options{
+		Creds:     credentials.NewStaticV4(accessKey, secretAccessKey, ""),
+		Secure:    useSsl,
+		Transport: transport,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create minio client: %w", err)
+	}
+
+	bucket, prefixDir, _ := strings.Cut(parsed.RequestURI()[1:], "/")
+	if prefixDir != "" && !strings.HasSuffix(prefixDir, "/") {
+		prefixDir += "/"
+	}
+
 	return &Store{
-		location:        storeConfig["location"],
-		host:            u.Host,
-		root:            u.Path,
-		accessKey:       accessKey,
-		secretAccessKey: secretAccessKey,
-		useSsl:          useSsl,
-		insecure:        insecure,
-		storageClass:    storageClass,
+		minioClient:  minioClient,
+		host:         parsed.Host,
+		root:         parsed.Path,
+		bucket:       bucket,
+		prefixDir:    prefixDir,
+		storageClass: storageClass,
 
 		bufPool: sync.Pool{
 			New: func() any {
@@ -137,49 +151,7 @@ func (s *Store) realpath(path string) string {
 	return s.prefixDir + path
 }
 
-func (s *Store) connect() error {
-	useSSL := s.useSsl
-	insecure := s.insecure
-
-	transport, err := minio.DefaultTransport(useSSL)
-	if err != nil {
-		return err
-	}
-
-	if insecure {
-		transport.TLSClientConfig.InsecureSkipVerify = true
-	}
-
-	// Initialize minio client object.
-	minioClient, err := minio.New(s.host, &minio.Options{
-		Creds:     credentials.NewStaticV4(s.accessKey, s.secretAccessKey, ""),
-		Secure:    useSSL,
-		Transport: transport,
-	})
-	if err != nil {
-		return fmt.Errorf("create minio client: %w", err)
-	}
-
-	s.minioClient = minioClient
-	return nil
-}
-
 func (s *Store) Create(ctx context.Context, config []byte) error {
-	parsed, err := url.Parse(s.location)
-	if err != nil {
-		return fmt.Errorf("parse location: %w", err)
-	}
-
-	err = s.connect()
-	if err != nil {
-		return fmt.Errorf("connect: %w", err)
-	}
-
-	s.bucket, s.prefixDir, _ = strings.Cut(parsed.RequestURI()[1:], "/")
-	if s.prefixDir != "" && !strings.HasSuffix(s.prefixDir, "/") {
-		s.prefixDir += "/"
-	}
-
 	exists, err := s.minioClient.BucketExists(ctx, s.bucket)
 	if err != nil {
 		return fmt.Errorf("check if bucket exists: %w", err)
@@ -219,21 +191,6 @@ func (s *Store) Create(ctx context.Context, config []byte) error {
 }
 
 func (s *Store) Open(ctx context.Context) ([]byte, error) {
-	parsed, err := url.Parse(s.location)
-	if err != nil {
-		return nil, fmt.Errorf("parse location: %w", err)
-	}
-
-	err = s.connect()
-	if err != nil {
-		return nil, fmt.Errorf("connect: %w", err)
-	}
-
-	s.bucket, s.prefixDir, _ = strings.Cut(parsed.RequestURI()[1:], "/")
-	if s.prefixDir != "" && !strings.HasSuffix(s.prefixDir, "/") {
-		s.prefixDir += "/"
-	}
-
 	exists, err := s.minioClient.BucketExists(ctx, s.bucket)
 	if err != nil {
 		return nil, fmt.Errorf("error checking if bucket exists: %w", err)
