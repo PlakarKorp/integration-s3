@@ -18,6 +18,7 @@ package exporter
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"net/url"
 	"path"
@@ -30,6 +31,9 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
+
+//go:embed schema.json
+var schemasFS embed.FS
 
 type S3Exporter struct {
 	minioClient *minio.Client

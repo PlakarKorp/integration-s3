@@ -11,13 +11,16 @@ connectors:
   homepage: https://github.com/PlakarKorp/integration-s3
   license: ISC
   protocols: [s3]
+  config_schema: ./importer/schema.json
 - type: exporter
   executable: s3Exporter
   homepage: https://github.com/PlakarKorp/integration-s3
   license: ISC
   protocols: [s3]
+  config_schema: ./exporter/schema.json
 - type: storage
   executable: s3Storage
   homepage: https://github.com/PlakarKorp/integration-s3
   license: ISC
   protocols: [s3]
+  config_schema: ./storage/schema.json

@@ -6,6 +6,7 @@ require (
 	github.com/PlakarKorp/go-kloset-sdk v1.1.0-beta.1
 	github.com/PlakarKorp/kloset v1.1.0-beta.2
 	github.com/minio/minio-go/v7 v7.0.95
+	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 )
 
 require (

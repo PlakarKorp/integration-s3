@@ -19,15 +19,16 @@ package storage
 import (
 	"bytes"
 	"context"
+	"embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/PlakarKorp/integration-s3/validator"
 	"github.com/PlakarKorp/kloset/connectors/storage"
 	"github.com/PlakarKorp/kloset/location"
 	"github.com/PlakarKorp/kloset/objects"
@@ -36,6 +37,9 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
+
+//go:embed schema.json
+var schemasFS embed.FS
 
 type Store struct {
 	minioClient *minio.Client
@@ -62,47 +66,41 @@ func init() {
 }
 
 func NewStore(ctx context.Context, proto string, storeConfig map[string]string) (storage.Store, error) {
+	tc, err := validator.Load(schemasFS, storeConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	var accessKey string
-	if value, ok := storeConfig["access_key"]; !ok {
+	if value, ok := tc["access_key"]; !ok {
 		return nil, fmt.Errorf("missing access_key")
 	} else {
-		accessKey = value
+		accessKey = value.(string)
 	}
 
 	var secretAccessKey string
-	if value, ok := storeConfig["secret_access_key"]; !ok {
+	if value, ok := tc["secret_access_key"]; !ok {
 		return nil, fmt.Errorf("missing secret_access_key")
 	} else {
-		secretAccessKey = value
+		secretAccessKey = value.(string)
 	}
 
 	useSsl := true
-	if value, ok := storeConfig["use_tls"]; ok {
-		tmp, err := strconv.ParseBool(value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid use_tls value")
-		}
-		useSsl = tmp
+	if value, ok := tc["use_tls"]; ok {
+		useSsl = value.(bool)
 	}
 
 	insecure := false
-	if value, ok := storeConfig["tls_insecure_no_verify"]; ok {
-		tmp, err := strconv.ParseBool(value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid tls_insecure_no_verify value")
-		}
-		insecure = tmp
+	if value, ok := tc["tls_insecure_no_verify"]; ok {
+		insecure = value.(bool)
 	}
 
 	storageClass := "STANDARD"
-	if value, ok := storeConfig["storage_class"]; ok {
-		storageClass = strings.ToUpper(value)
-		if storageClass != "STANDARD" && storageClass != "REDUCED_REDUNDANCY" && storageClass != "STANDARD_IA" && storageClass != "ONEZONE_IA" && storageClass != "INTELLIGENT_TIERING" && storageClass != "GLACIER" && storageClass != "GLACIER_IR" && storageClass != "DEEP_ARCHIVE" {
-			return nil, fmt.Errorf("invalid storage_class value")
-		}
+	if value, ok := tc["storage_class"]; ok {
+		storageClass = strings.ToUpper(value.(string))
 	}
 
-	u, err := url.Parse(storeConfig["location"])
+	u, err := url.Parse(tc["location"].(string))
 	if err != nil {
 		return nil, fmt.Errorf("parse location: %w", err)
 	}

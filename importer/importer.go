@@ -18,6 +18,7 @@ package importer
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"io"
 	"net/url"
@@ -28,11 +29,15 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
+	"github.com/PlakarKorp/integration-s3/validator"
 	"github.com/PlakarKorp/kloset/connectors"
 	"github.com/PlakarKorp/kloset/connectors/importer"
 	"github.com/PlakarKorp/kloset/location"
 	"github.com/PlakarKorp/kloset/objects"
 )
+
+//go:embed schema.json
+var schemasFS embed.FS
 
 type S3Importer struct {
 	minioClient *minio.Client
@@ -73,29 +78,29 @@ func connect(location *url.URL, useSsl, insecure bool, accessKeyID, secretAccess
 }
 
 func NewS3Importer(ctx context.Context, opts *connectors.Options, name string, config map[string]string) (importer.Importer, error) {
-	target := config["location"]
+	tc, err := validator.Load(schemasFS, config)
+	if err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
 
+	target := tc["location"].(string)
 	var accessKey string
-	if tmp, ok := config["access_key"]; !ok {
+	if tmp, ok := tc["access_key"]; !ok {
 		return nil, fmt.Errorf("missing access_key")
 	} else {
-		accessKey = tmp
+		accessKey = tmp.(string)
 	}
 
 	var secretAccessKey string
-	if tmp, ok := config["secret_access_key"]; !ok {
+	if tmp, ok := tc["secret_access_key"]; !ok {
 		return nil, fmt.Errorf("missing secret_access_key")
 	} else {
-		secretAccessKey = tmp
+		secretAccessKey = tmp.(string)
 	}
 
 	useSsl := true
-	if value, ok := config["use_tls"]; ok {
-		tmp, err := strconv.ParseBool(value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid use_tls value")
-		}
-		useSsl = tmp
+	if value, ok := tc["use_tls"].(bool); ok {
+		useSsl = value
 	}
 
 	insecure := false
