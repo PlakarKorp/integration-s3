@@ -27,12 +27,14 @@ import (
 	"github.com/PlakarKorp/kloset/connectors"
 	"github.com/PlakarKorp/kloset/connectors/exporter"
 	"github.com/PlakarKorp/kloset/location"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+
+	plakarss3 "github.com/PlakarKorp/integration-s3/common"
 )
 
 type S3Exporter struct {
-	minioClient *minio.Client
+	awsS3Client *s3.Client
 	rootDir     string
 	host        string
 	bucket      string
@@ -43,31 +45,12 @@ func init() {
 	exporter.Register("s3", 0, NewS3Exporter)
 }
 
-func connect(location *url.URL, useSsl, insecure bool, accessKeyID, secretAccessKey string) (*minio.Client, error) {
-	endpoint := location.Host
-
-	transport, err := minio.DefaultTransport(useSsl)
+func connect(location *url.URL, useSsl, insecure bool, accessKeyID, secretAccessKey string) (*s3.Client, error) {
+	conn, err := plakarss3.Connect(location, useSsl, insecure, accessKeyID, secretAccessKey)
 	if err != nil {
 		return nil, err
 	}
-
-	if insecure {
-		transport.TLSClientConfig.InsecureSkipVerify = true
-	}
-
-	// Initialize minio client object.
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:     credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
-		Secure:    useSsl,
-		Transport: transport,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	client.SetAppInfo("plakar", "v1.1.0")
-
-	return client, nil
+	return conn, nil
 }
 
 func NewS3Exporter(ctx context.Context, opts *connectors.Options, name string, config map[string]string) (exporter.Exporter, error) {
@@ -120,16 +103,19 @@ func NewS3Exporter(ctx context.Context, opts *connectors.Options, name string, c
 		return nil, err
 	}
 
-	err = conn.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
+	_, err = conn.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: &bucket,
+	})
 	if err != nil {
-		if minio.ToErrorResponse(err).Code != "BucketAlreadyOwnedByYou" {
-			return nil, fmt.Errorf("failed to create bucket %s: %w", bucket, err)
-		}
+		// TODO: Handle this error with aws sdk v2 error types
+		// if minio.ToErrorResponse(err).Code != "BucketAlreadyOwnedByYou" {
+		// 	return nil, fmt.Errorf("failed to create bucket %s: %w", bucket, err)
+		// }
 	}
 
 	return &S3Exporter{
 		rootDir:     parsed.Path,
-		minioClient: conn,
+		awsS3Client: conn,
 		host:        parsed.Host,
 		bucket:      bucket,
 		restoreDir:  restoreDir,
@@ -142,7 +128,7 @@ func (p *S3Exporter) Type() string          { return "s3" }
 func (p *S3Exporter) Flags() location.Flags { return 0 }
 
 func (p *S3Exporter) Ping(ctx context.Context) error {
-	ok, err := p.minioClient.BucketExists(ctx, p.bucket)
+	ok, err := plakarss3.BucketExists(ctx, p.awsS3Client, p.bucket)
 	if err != nil {
 		return err
 	}
@@ -160,9 +146,8 @@ func (p *S3Exporter) Export(ctx context.Context, records <-chan *connectors.Reco
 			results <- record.Ok()
 			continue
 		}
-
-		_, err := p.minioClient.PutObject(ctx, p.bucket, path.Join(p.restoreDir, record.Pathname),
-			record.Reader, record.FileInfo.Lsize, minio.PutObjectOptions{})
+		// NOTE: Do we need to use MD5 PutObjectInput?
+		_, err := p.awsS3Client.PutObject(ctx, plakarss3.NewPutObjectInput(p.bucket, path.Join(p.restoreDir, record.Pathname), record.Reader, record.FileInfo.Lsize, s3types.StorageClassStandard))
 		results <- record.Error(err)
 	}
 

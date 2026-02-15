@@ -32,7 +32,7 @@ func Connect(location *url.URL, useSsl, insecure bool, accessKeyID, secretAccess
 		return nil, err
 	}
 
-	return s3.NewFromConfig(cfg, buildOptions(location, useSsl, insecure, "Plakar-Integration/1.0")...), nil
+	return s3.NewFromConfig(cfg, buildOptions(location, useSsl, insecure, "plakar/1.0")...), nil
 }
 
 func buildOptions(location *url.URL, useSsl, insecure bool, userAgent string) []func(*s3.Options) {
@@ -117,7 +117,7 @@ func ObjectExists(ctx context.Context, client *s3.Client, bucket, key string) (b
 	return true, nil
 }
 
-func MD5HashPutObjectInput(bucket, key string, body io.Reader, contentLength int64, storageClass types.StorageClass) *s3.PutObjectInput {
+func NewPutObjectInput(bucket, key string, body io.Reader, contentLength int64, storageClass types.StorageClass) *s3.PutObjectInput {
 	hash := md5.New()
 	_, err := io.Copy(hash, body)
 	if err != nil {

@@ -201,13 +201,13 @@ func (s *Store) Create(ctx context.Context, config []byte) error {
 	}
 
 	if s.mode()&storage.ModeRead == 0 {
-		_, err = s.awsS3Client.PutObject(ctx, plakarss3.MD5HashPutObjectInput(s.bucket, s.realpath("CONFIG.frozen"), bytes.NewReader(config), int64(len(config)), s.storageClass))
+		_, err = s.awsS3Client.PutObject(ctx, plakarss3.NewPutObjectInput(s.bucket, s.realpath("CONFIG.frozen"), bytes.NewReader(config), int64(len(config)), s.storageClass))
 		if err != nil {
 			return fmt.Errorf("put object CONFIG.frozen: %w", err)
 		}
 	}
 
-	_, err = s.awsS3Client.PutObject(ctx, plakarss3.MD5HashPutObjectInput(s.bucket, s.realpath("CONFIG"), bytes.NewReader(config), int64(len(config)), s.storageClass))
+	_, err = s.awsS3Client.PutObject(ctx, plakarss3.NewPutObjectInput(s.bucket, s.realpath("CONFIG"), bytes.NewReader(config), int64(len(config)), s.storageClass))
 
 	if err != nil {
 		return fmt.Errorf("put object CONFIG: %w", err)
@@ -348,7 +348,7 @@ func (s *Store) Put(ctx context.Context, res storage.StorageResource, mac object
 			return 0, fmt.Errorf("read %s object: %w", res, ioErr)
 		}
 
-		putObjectInput := plakarss3.MD5HashPutObjectInput(s.bucket, s.realpath(fmt.Sprintf("packfiles/%02x/%016x", mac[0], mac)), buf, copied, s.storageClass)
+		putObjectInput := plakarss3.NewPutObjectInput(s.bucket, s.realpath(fmt.Sprintf("packfiles/%02x/%016x", mac[0], mac)), buf, copied, s.storageClass)
 		_, err := s.awsS3Client.PutObject(ctx, putObjectInput)
 		if err != nil {
 			return 0, fmt.Errorf("put %s object: %w", res, err)
@@ -358,7 +358,7 @@ func (s *Store) Put(ctx context.Context, res storage.StorageResource, mac object
 		s.bufPool.Put(buf)
 		return copied, nil
 	case storage.StorageResourceState:
-		putObjectInput := plakarss3.MD5HashPutObjectInput(s.bucket, s.realpath(fmt.Sprintf("states/%02x/%016x", mac[0], mac)), rd, -1, s.storageClass)
+		putObjectInput := plakarss3.NewPutObjectInput(s.bucket, s.realpath(fmt.Sprintf("states/%02x/%016x", mac[0], mac)), rd, -1, s.storageClass)
 		_, err := s.awsS3Client.PutObject(ctx, putObjectInput)
 		if err != nil {
 			return 0, fmt.Errorf("put %s object: %w", res, err)
@@ -367,7 +367,7 @@ func (s *Store) Put(ctx context.Context, res storage.StorageResource, mac object
 		//return info.Size, nil
 		return 0, nil
 	case storage.StorageResourceLock:
-		putObjectInput := plakarss3.MD5HashPutObjectInput(s.bucket, s.realpath(fmt.Sprintf("locks/%016x", mac)), rd, -1, s.storageClass)
+		putObjectInput := plakarss3.NewPutObjectInput(s.bucket, s.realpath(fmt.Sprintf("locks/%016x", mac)), rd, -1, s.storageClass)
 		_, err := s.awsS3Client.PutObject(ctx, putObjectInput)
 		if err != nil {
 			return 0, fmt.Errorf("put %s object: %w", res, err)
