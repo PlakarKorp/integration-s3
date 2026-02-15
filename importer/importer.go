@@ -25,8 +25,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	awscredentials "github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/PlakarKorp/kloset/connectors"
 	"github.com/PlakarKorp/kloset/connectors/importer"
@@ -36,6 +39,7 @@ import (
 
 type S3Importer struct {
 	minioClient *minio.Client
+	awsS3Client *s3.Client
 
 	bucket  string
 	host    string
@@ -46,30 +50,21 @@ func init() {
 	importer.Register("s3", 0, NewS3Importer)
 }
 
-func connect(location *url.URL, useSsl, insecure bool, accessKeyID, secretAccessKey string) (*minio.Client, error) {
-	endpoint := location.Host
+func connect(location *url.URL, useSsl, insecure bool, accessKeyID, secretAccessKey string) (*s3.Client, error) {
+	credsProvider := awscredentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, "")
+	cfg, err := awsconfig.LoadDefaultConfig(context.TODO(),
+		awsconfig.WithRegion(location.Host),
+		awsconfig.WithCredentialsProvider(credsProvider),
+	)
 
-	transport, err := minio.DefaultTransport(useSsl)
+	// TODO: Add insecure and useSSL support
+
 	if err != nil {
 		return nil, err
 	}
 
-	if insecure {
-		transport.TLSClientConfig.InsecureSkipVerify = true
-	}
-
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:     credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
-		Secure:    useSsl,
-		Transport: transport,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	client.SetAppInfo("plakar", "v1.1.0")
-
-	return client, nil
+	svc := s3.NewFromConfig(cfg)
+	return svc, nil
 }
 
 func NewS3Importer(ctx context.Context, opts *connectors.Options, name string, config map[string]string) (importer.Importer, error) {
@@ -124,7 +119,7 @@ func NewS3Importer(ctx context.Context, opts *connectors.Options, name string, c
 	return &S3Importer{
 		bucket:      bucket,
 		scanDir:     scanDir,
-		minioClient: conn,
+		awsS3Client: conn,
 		host:        parsed.Host,
 	}, nil
 }
@@ -135,12 +130,11 @@ func (p *S3Importer) Type() string          { return "s3" }
 func (p *S3Importer) Flags() location.Flags { return 0 }
 
 func (p *S3Importer) Ping(ctx context.Context) error {
-	ok, err := p.minioClient.BucketExists(ctx, p.bucket)
+	_, err := p.awsS3Client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: &p.bucket,
+	})
 	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("bucket does not exist")
+		return fmt.Errorf("ping bucket: %w", err)
 	}
 	return nil
 }
@@ -154,27 +148,39 @@ func (p *S3Importer) Import(ctx context.Context, records chan<- *connectors.Reco
 		return err
 	}
 
-	listopts := minio.ListObjectsOptions{
-		Prefix:    strings.TrimPrefix(p.scanDir, "/"),
-		Recursive: true,
+	listresults, err := p.awsS3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		Bucket: &p.bucket,
+		Prefix: aws.String(strings.TrimPrefix(p.scanDir, "/")),
+	})
+	if err != nil {
+		return fmt.Errorf("error during list objects: %w", err)
 	}
-	for object := range p.minioClient.ListObjects(ctx, p.bucket, listopts) {
-		// Some backend actually return _folders_, which they
-		// shouldn't so just skip over those.
-		if strings.HasSuffix(object.Key, "/") {
+
+	for _, object := range listresults.Contents {
+		objkey := *object.Key
+		if strings.HasSuffix(objkey, "/") {
 			continue
 		}
 
 		fi := objects.FileInfo{
-			Lname:    path.Base("/" + object.Key),
-			Lsize:    object.Size,
+			Lname:    path.Base("/" + objkey),
+			Lsize:    *object.Size,
 			Lmode:    0700,
-			LmodTime: object.LastModified,
+			LmodTime: *object.LastModified,
 			Ldev:     1,
 		}
 
-		records <- connectors.NewRecord("/"+object.Key, "", fi, nil, func() (io.ReadCloser, error) {
-			return p.minioClient.GetObject(ctx, p.bucket, object.Key, minio.GetObjectOptions{})
+		records <- connectors.NewRecord("/"+objkey, "", fi, nil, func() (io.ReadCloser, error) {
+			object, err := p.awsS3Client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &p.bucket,
+				Key:    &objkey,
+			})
+
+			if err != nil {
+				return nil, fmt.Errorf("error during get object: %w", err)
+			}
+
+			return object.Body, nil
 		})
 	}
 

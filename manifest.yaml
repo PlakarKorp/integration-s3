@@ -1,23 +1,23 @@
 name: s3
-display_name: S3
+display_name: S3 (aws-sdk-go-v2)
 description: Integration providing storage, import and export capabilities to and from/to buckets hosted on S3-compatible servers.
-homepage: https://github.com/PlakarKorp/integration-s3
+homepage: https://github.com/glemmaPaul/integration-s3-aws-sdk
 license: ISC
-api_version: v1.0.0
+api_version: v0.1.0
 version: v1.0.6
 connectors:
 - type: importer
   executable: s3Importer
-  homepage: https://github.com/PlakarKorp/integration-s3
+  homepage: https://github.com/glemmaPaul/integration-s3-aws-sdk
   license: ISC
   protocols: [s3]
 - type: exporter
   executable: s3Exporter
-  homepage: https://github.com/PlakarKorp/integration-s3
+  homepage: https://github.com/glemmaPaul/integration-s3-aws-sdk
   license: ISC
   protocols: [s3]
 - type: storage
   executable: s3Storage
-  homepage: https://github.com/PlakarKorp/integration-s3
+  homepage: https://github.com/glemmaPaul/integration-s3-aws-sdk
   license: ISC
   protocols: [s3]

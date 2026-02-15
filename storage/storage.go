@@ -33,12 +33,14 @@ import (
 	"github.com/PlakarKorp/kloset/objects"
 	"github.com/PlakarKorp/kloset/reading"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+
 	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type Store struct {
 	minioClient *minio.Client
+	awsS3Client *s3.Client
 	location    string
 	host        string
 	root        string
@@ -54,7 +56,7 @@ type Store struct {
 
 	bufPool sync.Pool
 
-	putObjectOptions minio.PutObjectOptions
+	putObjectOptions s3.PutObjectInput
 }
 
 func init() {
@@ -123,7 +125,7 @@ func NewStore(ctx context.Context, proto string, storeConfig map[string]string) 
 			},
 		},
 
-		putObjectOptions: minio.PutObjectOptions{
+		putObjectOptions: s3.PutObjectInput{
 			// Some providers (eg. BlackBlaze) return the error
 			// "Unsupported header 'x-amz-checksum-algorithm'" if SendContentMd5
 			// is not set.
@@ -138,32 +140,32 @@ func (s *Store) realpath(path string) string {
 }
 
 func (s *Store) connect() error {
-	useSSL := s.useSsl
-	insecure := s.insecure
+	// useSSL := s.useSsl
+	// insecure := s.insecure
 
-	transport, err := minio.DefaultTransport(useSSL)
-	if err != nil {
-		return err
-	}
+	// transport, err := minio.DefaultTransport(useSSL)
+	// if err != nil {
+	// 	return err
+	// }
 
-	if insecure {
-		transport.TLSClientConfig.InsecureSkipVerify = true
-	}
+	// if insecure {
+	// 	transport.TLSClientConfig.InsecureSkipVerify = true
+	// }
 
-	// Initialize minio client object.
-	minioClient, err := minio.New(s.host, &minio.Options{
-		Creds:     credentials.NewStaticV4(s.accessKey, s.secretAccessKey, ""),
-		Secure:    useSSL,
-		Transport: transport,
-	})
-	if err != nil {
-		return fmt.Errorf("create minio client: %w", err)
-	}
+	// // Initialize minio client object.
+	// minioClient, err := minio.New(s.host, &minio.Options{
+	// 	Creds:     credentials.NewStaticV4(s.accessKey, s.secretAccessKey, ""),
+	// 	Secure:    useSSL,
+	// 	Transport: transport,
+	// })
+	// if err != nil {
+	// 	return fmt.Errorf("create minio client: %w", err)
+	// }
 
-	minioClient.SetAppInfo("plakar", "v1.1.0")
+	// minioClient.SetAppInfo("plakar", "v1.1.0")
 
-	s.minioClient = minioClient
-	return nil
+	// s.minioClient = minioClient
+	// return nil
 }
 
 func (s *Store) Create(ctx context.Context, config []byte) error {
