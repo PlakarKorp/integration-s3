@@ -25,9 +25,8 @@ import (
 	"strconv"
 	"strings"
 
+	plakarss3 "github.com/PlakarKorp/integration-s3/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	awscredentials "github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/minio/minio-go/v7"
 
@@ -48,23 +47,6 @@ type S3Importer struct {
 
 func init() {
 	importer.Register("s3", 0, NewS3Importer)
-}
-
-func connect(location *url.URL, useSsl, insecure bool, accessKeyID, secretAccessKey string) (*s3.Client, error) {
-	credsProvider := awscredentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, "")
-	cfg, err := awsconfig.LoadDefaultConfig(context.TODO(),
-		awsconfig.WithRegion(location.Host),
-		awsconfig.WithCredentialsProvider(credsProvider),
-	)
-
-	// TODO: Add insecure and useSSL support
-
-	if err != nil {
-		return nil, err
-	}
-
-	svc := s3.NewFromConfig(cfg)
-	return svc, nil
 }
 
 func NewS3Importer(ctx context.Context, opts *connectors.Options, name string, config map[string]string) (importer.Importer, error) {
@@ -107,7 +89,7 @@ func NewS3Importer(ctx context.Context, opts *connectors.Options, name string, c
 		return nil, err
 	}
 
-	conn, err := connect(parsed, useSsl, insecure, accessKey, secretAccessKey)
+	conn, err := plakarss3.Connect(parsed, useSsl, insecure, accessKey, secretAccessKey)
 	if err != nil {
 		return nil, err
 	}
@@ -130,11 +112,12 @@ func (p *S3Importer) Type() string          { return "s3" }
 func (p *S3Importer) Flags() location.Flags { return 0 }
 
 func (p *S3Importer) Ping(ctx context.Context) error {
-	_, err := p.awsS3Client.HeadBucket(ctx, &s3.HeadBucketInput{
-		Bucket: &p.bucket,
-	})
+	exists, err := plakarss3.BucketExists(ctx, p.awsS3Client, p.bucket)
 	if err != nil {
-		return fmt.Errorf("ping bucket: %w", err)
+		return fmt.Errorf("check if bucket exists: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("bucket does not exist")
 	}
 	return nil
 }

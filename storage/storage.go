@@ -33,8 +33,10 @@ import (
 	"github.com/PlakarKorp/kloset/objects"
 	"github.com/PlakarKorp/kloset/reading"
 
+	plakarss3 "github.com/PlakarKorp/integration-s3/common"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/minio/minio-go/v7"
 )
 
@@ -52,7 +54,8 @@ type Store struct {
 	accessKey       string
 	secretAccessKey string
 
-	storageClass string
+	//storageClass string
+	storageClass s3types.StorageClass
 
 	bufPool sync.Pool
 
@@ -117,7 +120,7 @@ func NewStore(ctx context.Context, proto string, storeConfig map[string]string) 
 		secretAccessKey: secretAccessKey,
 		useSsl:          useSsl,
 		insecure:        insecure,
-		storageClass:    storageClass,
+		storageClass:    s3types.StorageClass(storageClass),
 
 		bufPool: sync.Pool{
 			New: func() any {
@@ -125,13 +128,13 @@ func NewStore(ctx context.Context, proto string, storeConfig map[string]string) 
 			},
 		},
 
-		putObjectOptions: s3.PutObjectInput{
-			// Some providers (eg. BlackBlaze) return the error
-			// "Unsupported header 'x-amz-checksum-algorithm'" if SendContentMd5
-			// is not set.
-			StorageClass:   storageClass,
-			SendContentMd5: true,
-		},
+		// putObjectOptions: s3.PutObjectInput{
+		// 	// Some providers (eg. BlackBlaze) return the error
+		// 	// "Unsupported header 'x-amz-checksum-algorithm'" if SendContentMd5
+		// 	// is not set.
+		// 	StorageClass:   storageClass,
+		// 	SendContentMd5: true,
+		// },
 	}, nil
 }
 
@@ -140,32 +143,21 @@ func (s *Store) realpath(path string) string {
 }
 
 func (s *Store) connect() error {
-	// useSSL := s.useSsl
-	// insecure := s.insecure
+	useSSL := s.useSsl
+	insecure := s.insecure
 
-	// transport, err := minio.DefaultTransport(useSSL)
-	// if err != nil {
-	// 	return err
-	// }
+	parsed, err := url.Parse(s.location)
+	if err != nil {
+		return err
+	}
 
-	// if insecure {
-	// 	transport.TLSClientConfig.InsecureSkipVerify = true
-	// }
+	conn, err := plakarss3.Connect(parsed, useSSL, insecure, s.accessKey, s.secretAccessKey)
+	if err != nil {
+		return err
+	}
 
-	// // Initialize minio client object.
-	// minioClient, err := minio.New(s.host, &minio.Options{
-	// 	Creds:     credentials.NewStaticV4(s.accessKey, s.secretAccessKey, ""),
-	// 	Secure:    useSSL,
-	// 	Transport: transport,
-	// })
-	// if err != nil {
-	// 	return fmt.Errorf("create minio client: %w", err)
-	// }
-
-	// minioClient.SetAppInfo("plakar", "v1.1.0")
-
-	// s.minioClient = minioClient
-	// return nil
+	s.awsS3Client = conn
+	return nil
 }
 
 func (s *Store) Create(ctx context.Context, config []byte) error {
@@ -184,37 +176,39 @@ func (s *Store) Create(ctx context.Context, config []byte) error {
 		s.prefixDir += "/"
 	}
 
-	exists, err := s.minioClient.BucketExists(ctx, s.bucket)
+	exists, err := plakarss3.BucketExists(ctx, s.awsS3Client, s.bucket)
 	if err != nil {
 		return fmt.Errorf("check if bucket exists: %w", err)
 	}
 	if !exists {
-		err = s.minioClient.MakeBucket(ctx, s.bucket, minio.MakeBucketOptions{})
+		_, err = s.awsS3Client.CreateBucket(ctx, &s3.CreateBucketInput{
+			Bucket: &s.bucket,
+			CreateBucketConfiguration: &s3types.CreateBucketConfiguration{
+				LocationConstraint: "eu-west-1", // NOTE: Should this be configurable?
+			},
+		})
 		if err != nil {
 			return fmt.Errorf("make bucket: %w", err)
 		}
 	}
 
-	_, err = s.minioClient.StatObject(ctx, s.bucket, s.realpath("CONFIG"), minio.StatObjectOptions{})
+	exists, err = plakarss3.ObjectExists(ctx, s.awsS3Client, s.bucket, s.realpath("CONFIG"))
 	if err != nil {
-		if minio.ToErrorResponse(err).Code != "NoSuchKey" {
-			return fmt.Errorf("stat object CONFIG: %w", err)
-		}
-	} else {
+		return fmt.Errorf("check if object exists: %w", err)
+	}
+	if !exists {
 		return fmt.Errorf("bucket already initialized")
 	}
 
 	if s.mode()&storage.ModeRead == 0 {
-		_, err = s.minioClient.PutObject(ctx, s.bucket, s.realpath("CONFIG.frozen"), bytes.NewReader(config), int64(len(config)), s.putObjectOptions)
+		_, err = s.awsS3Client.PutObject(ctx, plakarss3.MD5HashPutObjectInput(s.bucket, s.realpath("CONFIG.frozen"), bytes.NewReader(config), int64(len(config)), s.storageClass))
 		if err != nil {
 			return fmt.Errorf("put object CONFIG.frozen: %w", err)
 		}
 	}
 
-	putObjectOptions := s.putObjectOptions
-	putObjectOptions.StorageClass = "STANDARD"
+	_, err = s.awsS3Client.PutObject(ctx, plakarss3.MD5HashPutObjectInput(s.bucket, s.realpath("CONFIG"), bytes.NewReader(config), int64(len(config)), s.storageClass))
 
-	_, err = s.minioClient.PutObject(ctx, s.bucket, s.realpath("CONFIG"), bytes.NewReader(config), int64(len(config)), putObjectOptions)
 	if err != nil {
 		return fmt.Errorf("put object CONFIG: %w", err)
 	}
@@ -238,7 +232,7 @@ func (s *Store) Open(ctx context.Context) ([]byte, error) {
 		s.prefixDir += "/"
 	}
 
-	exists, err := s.minioClient.BucketExists(ctx, s.bucket)
+	exists, err := plakarss3.BucketExists(ctx, s.awsS3Client, s.bucket)
 	if err != nil {
 		return nil, fmt.Errorf("error checking if bucket exists: %w", err)
 	}
@@ -246,29 +240,34 @@ func (s *Store) Open(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("bucket does not exist")
 	}
 
-	object, err := s.minioClient.GetObject(ctx, s.bucket, s.realpath("CONFIG"), minio.GetObjectOptions{})
+	//object, err := s.minioClient.GetObject(ctx, s.bucket, s.realpath("CONFIG"), minio.GetObjectOptions{})
+	object, err := s.awsS3Client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &s.bucket,
+		Key:    aws.String(s.realpath("CONFIG")),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("error getting object: %w", err)
 	}
-	stat, err := object.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("error getting object stat: %w", err)
-	}
+	// TODO: Seems a minio only thing.. but have to investigate
+	// stat, err := object.Stat()
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error getting object stat: %w", err)
+	// }
 
-	data := make([]byte, stat.Size)
-	_, err = object.Read(data)
+	data := make([]byte, *object.ContentLength)
+	_, err = object.Body.Read(data)
 	if err != nil {
 		if err != io.EOF {
 			return nil, fmt.Errorf("error reading object: %w", err)
 		}
 	}
-	object.Close()
+	object.Body.Close()
 
 	return data, nil
 }
 
 func (p *Store) Ping(ctx context.Context) error {
-	ok, err := p.minioClient.BucketExists(ctx, p.bucket)
+	ok, err := plakarss3.BucketExists(ctx, p.awsS3Client, p.bucket)
 	if err != nil {
 		return err
 	}
@@ -284,7 +283,7 @@ func (s *Store) Type() string          { return "s3" }
 func (s *Store) Flags() location.Flags { return 0 }
 
 func (s *Store) mode() storage.Mode {
-	if s.storageClass == "GLACIER" || s.storageClass == "DEEP_ARCHIVE" {
+	if s.storageClass == s3types.StorageClassGlacier || s.storageClass == s3types.StorageClassDeepArchive {
 		return storage.ModeWrite
 	}
 	return storage.ModeRead | storage.ModeWrite
@@ -317,12 +316,17 @@ func (s *Store) List(ctx context.Context, res storage.StorageResource) ([]object
 	}
 
 	ret := make([]objects.MAC, 0)
-	for object := range s.minioClient.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{
-		Prefix:    prefix,
-		Recursive: true,
-	}) {
-		if strings.HasPrefix(object.Key, prefix) && len(object.Key) >= prefixSize {
-			t, err := hex.DecodeString(object.Key[prefixSize:])
+	listresults, err := s.awsS3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		Bucket: &s.bucket,
+		Prefix: aws.String(prefix),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error listing objects: %w", err)
+	}
+	for _, object := range listresults.Contents {
+		if strings.HasPrefix(*object.Key, prefix) && len(*object.Key) >= prefixSize {
+			keyPrefix := (*object.Key)[:prefixSize]
+			t, err := hex.DecodeString(keyPrefix)
 			if err != nil {
 				return nil, fmt.Errorf("decode %s key: %w", res, err)
 			}
@@ -333,42 +337,43 @@ func (s *Store) List(ctx context.Context, res storage.StorageResource) ([]object
 		}
 	}
 	return ret, nil
-
 }
 
 func (s *Store) Put(ctx context.Context, res storage.StorageResource, mac objects.MAC, rd io.Reader) (int64, error) {
 	switch res {
 	case storage.StorageResourcePackfile:
 		buf := s.bufPool.Get().(*bytes.Buffer)
-		copied, err := io.Copy(buf, rd)
-		if err != nil {
-			return 0, fmt.Errorf("read %s object: %w", res, err)
+		copied, ioErr := io.Copy(buf, rd)
+		if ioErr != nil {
+			return 0, fmt.Errorf("read %s object: %w", res, ioErr)
 		}
 
-		info, err := s.minioClient.PutObject(ctx, s.bucket, s.realpath(fmt.Sprintf("packfiles/%02x/%016x", mac[0], mac)), buf, copied, s.putObjectOptions)
+		putObjectInput := plakarss3.MD5HashPutObjectInput(s.bucket, s.realpath(fmt.Sprintf("packfiles/%02x/%016x", mac[0], mac)), buf, copied, s.storageClass)
+		_, err := s.awsS3Client.PutObject(ctx, putObjectInput)
 		if err != nil {
 			return 0, fmt.Errorf("put %s object: %w", res, err)
 		}
 
 		buf.Reset()
 		s.bufPool.Put(buf)
-		return info.Size, nil
+		return copied, nil
 	case storage.StorageResourceState:
-		info, err := s.minioClient.PutObject(ctx, s.bucket, s.realpath(fmt.Sprintf("states/%02x/%016x", mac[0], mac)), rd, -1, s.putObjectOptions)
+		putObjectInput := plakarss3.MD5HashPutObjectInput(s.bucket, s.realpath(fmt.Sprintf("states/%02x/%016x", mac[0], mac)), rd, -1, s.storageClass)
+		_, err := s.awsS3Client.PutObject(ctx, putObjectInput)
 		if err != nil {
 			return 0, fmt.Errorf("put %s object: %w", res, err)
 		}
 
-		return info.Size, nil
+		//return info.Size, nil
+		return 0, nil
 	case storage.StorageResourceLock:
-		putObjectOptions := s.putObjectOptions
-		putObjectOptions.StorageClass = "STANDARD"
-
-		info, err := s.minioClient.PutObject(ctx, s.bucket, s.realpath(fmt.Sprintf("locks/%016x", mac)), rd, -1, putObjectOptions)
+		putObjectInput := plakarss3.MD5HashPutObjectInput(s.bucket, s.realpath(fmt.Sprintf("locks/%016x", mac)), rd, -1, s.storageClass)
+		_, err := s.awsS3Client.PutObject(ctx, putObjectInput)
 		if err != nil {
 			return 0, fmt.Errorf("put %s object: %w", res, err)
 		}
-		return info.Size, nil
+		//return info.Size, nil
+		return 0, nil
 	}
 
 	return -1, errors.ErrUnsupported
@@ -387,16 +392,17 @@ func (s *Store) Get(ctx context.Context, res storage.StorageResource, mac object
 		return nil, errors.ErrUnsupported
 	}
 
-	object, err := s.minioClient.GetObject(ctx, s.bucket, path, minio.GetObjectOptions{})
+	//object, err := s.minioClient.GetObject(ctx, s.bucket, path, minio.GetObjectOptions{})
+	seekableFileReader, err := plakarss3.NewS3SeekableFileReader(ctx, s.awsS3Client, s.bucket, path)
 	if err != nil {
 		return nil, fmt.Errorf("get %s object: %w", res, err)
 	}
 
 	if rg != nil {
-		return reading.NewSectionReadCloser(object, int64(rg.Offset), int64(rg.Length)), nil
+		return reading.NewSectionReadCloser(seekableFileReader, int64(rg.Offset), int64(rg.Length)), nil
 	}
 
-	return object, nil
+	return seekableFileReader, nil
 }
 
 func (s *Store) Delete(ctx context.Context, res storage.StorageResource, mac objects.MAC) error {
@@ -410,11 +416,11 @@ func (s *Store) Delete(ctx context.Context, res storage.StorageResource, mac obj
 		path = s.realpath(fmt.Sprintf("locks/%016x", mac))
 	}
 
-	err := s.minioClient.RemoveObject(ctx, s.bucket, path, minio.RemoveObjectOptions{})
-	if err != nil {
-		return fmt.Errorf("remove %s object: %w", res, err)
-	}
-	return nil
+	_, err := s.awsS3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: &s.bucket,
+		Key:    aws.String(path),
+	})
+	return err
 }
 
 func (s *Store) Close(ctx context.Context) error {
