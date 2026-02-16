@@ -18,6 +18,7 @@ package exporter
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net/url"
 	"path"
@@ -168,8 +169,29 @@ func (p *S3Exporter) Export(ctx context.Context, records <-chan *connectors.Reco
 		}
 
 		g.Go(func() error {
-			_, err := p.minioClient.PutObject(ctx, p.bucket, path.Join(p.restoreDir, record.Pathname),
-				record.Reader, record.FileInfo.Lsize, minio.PutObjectOptions{})
+			objectName := path.Join(p.restoreDir, record.Pathname)
+
+			serialized, err := record.FileInfo.ToBytes()
+			if err != nil {
+				results <- record.Error(fmt.Errorf("failed to serialize file info: %w", err))
+				return nil
+			}
+			serializedSum := sha256.Sum256(serialized)
+
+			st, err := p.minioClient.StatObject(ctx, p.bucket, objectName, minio.StatObjectOptions{})
+			if err == nil {
+				if st.UserMetadata["X-Kloset-Fileinfo-Sha256"] == fmt.Sprintf("%x", serializedSum) {
+					results <- record.Ok()
+					return nil
+				}
+			}
+
+			_, err = p.minioClient.PutObject(ctx, p.bucket, objectName,
+				record.Reader, record.FileInfo.Lsize, minio.PutObjectOptions{
+					UserMetadata: map[string]string{
+						"X-Kloset-Fileinfo-Sha256": fmt.Sprintf("%x", serializedSum),
+					},
+				})
 			results <- record.Error(err)
 			return nil
 		})
