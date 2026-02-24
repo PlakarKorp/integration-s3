@@ -18,6 +18,7 @@ package importer
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"io"
 	"net/url"
@@ -28,6 +29,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
+	sdk "github.com/PlakarKorp/go-kloset-sdk"
 	"github.com/PlakarKorp/kloset/connectors"
 	"github.com/PlakarKorp/kloset/connectors/importer"
 	"github.com/PlakarKorp/kloset/location"
@@ -72,7 +74,14 @@ func connect(location *url.URL, useSsl, insecure bool, accessKeyID, secretAccess
 	return client, nil
 }
 
+//go:embed schema.json
+var schema string
+
 func NewS3Importer(ctx context.Context, opts *connectors.Options, name string, config map[string]string) (importer.Importer, error) {
+	if _, err := sdk.ValidateConfig(schema, config); err != nil {
+		return nil, err
+	}
+
 	target := config["location"]
 
 	var accessKey string

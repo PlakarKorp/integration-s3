@@ -3,7 +3,7 @@ module github.com/PlakarKorp/integration-s3
 go 1.24.0
 
 require (
-	github.com/PlakarKorp/go-kloset-sdk v1.1.0-beta.1
+	github.com/PlakarKorp/go-kloset-sdk v1.1.0-beta.1.0.20260224105957-73fc19d37843
 	github.com/PlakarKorp/kloset v1.1.0-beta.2
 	github.com/minio/minio-go/v7 v7.0.95
 )
@@ -32,6 +32,7 @@ require (
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rs/xid v1.6.0 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/tink-crypto/tink-go/v2 v2.6.0 // indirect
 	github.com/tinylib/msgp v1.3.0 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect

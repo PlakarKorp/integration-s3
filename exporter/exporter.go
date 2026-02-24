@@ -18,12 +18,14 @@ package exporter
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"net/url"
 	"path"
 	"strconv"
 	"strings"
 
+	sdk "github.com/PlakarKorp/go-kloset-sdk"
 	"github.com/PlakarKorp/kloset/connectors"
 	"github.com/PlakarKorp/kloset/connectors/exporter"
 	"github.com/PlakarKorp/kloset/location"
@@ -72,7 +74,14 @@ func connect(location *url.URL, useSsl, insecure bool, accessKeyID, secretAccess
 	return client, nil
 }
 
+//go:embed schema.json
+var schema string
+
 func NewS3Exporter(ctx context.Context, opts *connectors.Options, name string, config map[string]string) (exporter.Exporter, error) {
+	if _, err := sdk.ValidateConfig(schema, config); err != nil {
+		return nil, err
+	}
+
 	target := config["location"]
 	var accessKey string
 	if tmp, ok := config["access_key"]; !ok {

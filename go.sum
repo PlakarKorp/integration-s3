@@ -6,6 +6,8 @@ github.com/PlakarKorp/go-cdc-chunkers v1.0.3 h1:6ozBFcNMHvGe6IsbPcAZUUEAExCgcNx3
 github.com/PlakarKorp/go-cdc-chunkers v1.0.3/go.mod h1:y7ag92JABKPBDoSOPwedssQ5NIOgjRm4Mu6yTBpmUMY=
 github.com/PlakarKorp/go-kloset-sdk v1.1.0-beta.1 h1:gPetIUfg///RiaML7CRINCcdXo55NHvaQIbpIoIBWGk=
 github.com/PlakarKorp/go-kloset-sdk v1.1.0-beta.1/go.mod h1:ni69BgWur3+rHb7cOg/8JOKEMFh8J7tEPxTTSUhGNjE=
+github.com/PlakarKorp/go-kloset-sdk v1.1.0-beta.1.0.20260224105957-73fc19d37843 h1:WpwJvtiYPBmdEGzEBPI8hqSvu0m2v7puFkh/ypMgCO8=
+github.com/PlakarKorp/go-kloset-sdk v1.1.0-beta.1.0.20260224105957-73fc19d37843/go.mod h1:0GqrH3CgNZgBpFHGB/kKWg7Ol7utcX22YdB9R/QodkM=
 github.com/PlakarKorp/integration-grpc v1.1.0-beta.3 h1:u0n6Uyz7wqHOMoMYbfBLrcSrfAGqzcNQtcgkgYfU5TQ=
 github.com/PlakarKorp/integration-grpc v1.1.0-beta.3/go.mod h1:lrkbUc9iT0jHiZ5wmB19wAhjDTMRO/VDhMJEt5trFlY=
 github.com/PlakarKorp/kloset v1.1.0-beta.2 h1:YUMCCguPW6buz3h17eYYX+c0QMVE9c8WqkwTI6ueLwA=
@@ -117,6 +119,8 @@ github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0t
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
 github.com/rs/xid v1.6.0 h1:fV591PaemRlL6JfRxGDEPl69wICngIQ3shQtzfy2gxU=
 github.com/rs/xid v1.6.0/go.mod h1:7XoLgs4eV+QndskICGsho+ADou8ySMSjJKDIan90Nz0=
+github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 h1:KRzFb2m7YtdldCEkzs6KqmJw4nqEVZGK7IN2kJkjTuQ=
+github.com/santhosh-tekuri/jsonschema/v6 v6.0.2/go.mod h1:JXeL+ps8p7/KNMjDQk3TCwPpBy0wYklyWTfbkIzdIFU=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/tink-crypto/tink-go/v2 v2.6.0 h1:+KHNBHhWH33Vn+igZWcsgdEPUxKwBMEe0QC60t388v4=

@@ -19,6 +19,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -28,6 +29,7 @@ import (
 	"strings"
 	"sync"
 
+	sdk "github.com/PlakarKorp/go-kloset-sdk"
 	"github.com/PlakarKorp/kloset/connectors/storage"
 	"github.com/PlakarKorp/kloset/location"
 	"github.com/PlakarKorp/kloset/objects"
@@ -61,7 +63,14 @@ func init() {
 	storage.Register("s3", 0, NewStore)
 }
 
+//go:embed schema.json
+var schema string
+
 func NewStore(ctx context.Context, proto string, storeConfig map[string]string) (storage.Store, error) {
+	if _, err := sdk.ValidateConfig(schema, storeConfig); err != nil {
+		return nil, err
+	}
+
 	var accessKey string
 	if value, ok := storeConfig["access_key"]; !ok {
 		return nil, fmt.Errorf("missing access_key")
