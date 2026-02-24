@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net/url"
 	"path"
-	"strconv"
 	"strings"
 
 	sdk "github.com/PlakarKorp/go-kloset-sdk"
@@ -33,6 +32,14 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"golang.org/x/sync/errgroup"
 )
+
+type S3ExporterConfig struct {
+	Location        string `json:"location"`
+	AccessKey       string `json:"access_key"`
+	SecretAccessKey string `json:"secret_access_key"`
+	UseTLS          bool   `json:"use_tls"`
+	TLSNoVerify     bool   `json:"tls_insecure_no_verify"`
+}
 
 type S3Exporter struct {
 	opts        *connectors.Options
@@ -47,22 +54,19 @@ func init() {
 	exporter.Register("s3", 0, NewS3Exporter)
 }
 
-func connect(location *url.URL, useSsl, insecure bool, accessKeyID, secretAccessKey string) (*minio.Client, error) {
-	endpoint := location.Host
-
-	transport, err := minio.DefaultTransport(useSsl)
+func connect(endpoint string, cfg S3ExporterConfig) (*minio.Client, error) {
+	transport, err := minio.DefaultTransport(cfg.UseTLS)
 	if err != nil {
 		return nil, err
 	}
 
-	if insecure {
+	if cfg.TLSNoVerify {
 		transport.TLSClientConfig.InsecureSkipVerify = true
 	}
 
-	// Initialize minio client object.
 	client, err := minio.New(endpoint, &minio.Options{
-		Creds:     credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
-		Secure:    useSsl,
+		Creds:     credentials.NewStaticV4(cfg.AccessKey, cfg.SecretAccessKey, ""),
+		Secure:    cfg.UseTLS,
 		Transport: transport,
 	})
 	if err != nil {
@@ -78,44 +82,12 @@ func connect(location *url.URL, useSsl, insecure bool, accessKeyID, secretAccess
 var schema string
 
 func NewS3Exporter(ctx context.Context, opts *connectors.Options, name string, config map[string]string) (exporter.Exporter, error) {
-	if _, err := sdk.ValidateConfig(schema, config); err != nil {
+	var cfg S3ExporterConfig
+	if err := sdk.DecodeConfig(schema, config, &cfg); err != nil {
 		return nil, err
 	}
 
-	target := config["location"]
-	var accessKey string
-	if tmp, ok := config["access_key"]; !ok {
-		return nil, fmt.Errorf("missing access_key")
-	} else {
-		accessKey = tmp
-	}
-
-	var secretAccessKey string
-	if tmp, ok := config["secret_access_key"]; !ok {
-		return nil, fmt.Errorf("missing secret_access_key")
-	} else {
-		secretAccessKey = tmp
-	}
-
-	useSsl := true
-	if value, ok := config["use_tls"]; ok {
-		tmp, err := strconv.ParseBool(value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid use_tls value")
-		}
-		useSsl = tmp
-	}
-
-	insecure := false
-	if value, ok := config["tls_insecure_no_verify"]; ok {
-		tmp, err := strconv.ParseBool(value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid tls_insecure_no_verify value")
-		}
-		insecure = tmp
-	}
-
-	parsed, err := url.Parse(target)
+	parsed, err := url.Parse(cfg.Location)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +98,7 @@ func NewS3Exporter(ctx context.Context, opts *connectors.Options, name string, c
 		restoreDir = path.Clean("/" + strings.Join(atoms[1:], "/"))
 	)
 
-	conn, err := connect(parsed, useSsl, insecure, accessKey, secretAccessKey)
+	conn, err := connect(parsed.Host, cfg)
 	if err != nil {
 		return nil, err
 	}

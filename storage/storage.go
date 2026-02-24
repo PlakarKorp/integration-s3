@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -38,6 +37,15 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
+
+type S3StorageConfig struct {
+	Location        string `json:"location"`
+	AccessKey       string `json:"access_key"`
+	SecretAccessKey string `json:"secret_access_key"`
+	UseTLS          bool   `json:"use_tls"`
+	TLSNoVerify     bool   `json:"tls_insecure_no_verify"`
+	StorageClass    string `json:"storage_class"`
+}
 
 type Store struct {
 	minioClient *minio.Client
@@ -66,65 +74,26 @@ func init() {
 //go:embed schema.json
 var schema string
 
-func NewStore(ctx context.Context, proto string, storeConfig map[string]string) (storage.Store, error) {
-	if _, err := sdk.ValidateConfig(schema, storeConfig); err != nil {
+func NewStore(ctx context.Context, proto string, config map[string]string) (storage.Store, error) {
+	var cfg S3StorageConfig
+	if err := sdk.DecodeConfig(schema, config, &cfg); err != nil {
 		return nil, err
 	}
 
-	var accessKey string
-	if value, ok := storeConfig["access_key"]; !ok {
-		return nil, fmt.Errorf("missing access_key")
-	} else {
-		accessKey = value
-	}
-
-	var secretAccessKey string
-	if value, ok := storeConfig["secret_access_key"]; !ok {
-		return nil, fmt.Errorf("missing secret_access_key")
-	} else {
-		secretAccessKey = value
-	}
-
-	useSsl := true
-	if value, ok := storeConfig["use_tls"]; ok {
-		tmp, err := strconv.ParseBool(value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid use_tls value")
-		}
-		useSsl = tmp
-	}
-
-	insecure := false
-	if value, ok := storeConfig["tls_insecure_no_verify"]; ok {
-		tmp, err := strconv.ParseBool(value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid tls_insecure_no_verify value")
-		}
-		insecure = tmp
-	}
-
-	storageClass := "STANDARD"
-	if value, ok := storeConfig["storage_class"]; ok {
-		storageClass = strings.ToUpper(value)
-		if storageClass != "STANDARD" && storageClass != "REDUCED_REDUNDANCY" && storageClass != "STANDARD_IA" && storageClass != "ONEZONE_IA" && storageClass != "INTELLIGENT_TIERING" && storageClass != "GLACIER" && storageClass != "GLACIER_IR" && storageClass != "DEEP_ARCHIVE" {
-			return nil, fmt.Errorf("invalid storage_class value")
-		}
-	}
-
-	u, err := url.Parse(storeConfig["location"])
+	u, err := url.Parse(cfg.Location)
 	if err != nil {
 		return nil, fmt.Errorf("parse location: %w", err)
 	}
 
 	return &Store{
-		location:        storeConfig["location"],
+		location:        cfg.Location,
 		host:            u.Host,
 		root:            u.Path,
-		accessKey:       accessKey,
-		secretAccessKey: secretAccessKey,
-		useSsl:          useSsl,
-		insecure:        insecure,
-		storageClass:    storageClass,
+		accessKey:       cfg.AccessKey,
+		secretAccessKey: cfg.SecretAccessKey,
+		useSsl:          cfg.UseTLS,
+		insecure:        cfg.TLSNoVerify,
+		storageClass:    cfg.StorageClass,
 
 		bufPool: sync.Pool{
 			New: func() any {
@@ -136,7 +105,7 @@ func NewStore(ctx context.Context, proto string, storeConfig map[string]string) 
 			// Some providers (eg. BlackBlaze) return the error
 			// "Unsupported header 'x-amz-checksum-algorithm'" if SendContentMd5
 			// is not set.
-			StorageClass:   storageClass,
+			StorageClass:   cfg.StorageClass,
 			SendContentMd5: true,
 		},
 	}, nil
