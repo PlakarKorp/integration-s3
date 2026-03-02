@@ -248,17 +248,10 @@ func (s *Store) Open(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting object: %w", err)
 	}
-	stat, err := object.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("error getting object stat: %w", err)
-	}
 
-	data := make([]byte, stat.Size)
-	_, err = object.Read(data)
+	data, err := io.ReadAll(object)
 	if err != nil {
-		if err != io.EOF {
-			return nil, fmt.Errorf("error reading object: %w", err)
-		}
+		return nil, fmt.Errorf("error reading object: %w", err)
 	}
 	object.Close()
 
