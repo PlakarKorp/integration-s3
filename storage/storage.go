@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,9 +40,7 @@ import (
 
 type Store struct {
 	minioClient *minio.Client
-	location    string
 	host        string
-	root        string
 	bucket      string
 	prefixDir   string
 
@@ -113,9 +112,7 @@ func NewStore(ctx context.Context, proto string, storeConfig map[string]string) 
 	}
 
 	return &Store{
-		location:        storeConfig["location"],
 		host:            u.Host,
-		root:            u.Path,
 		bucket:          bucket,
 		prefixDir:       prefixDir,
 		accessKey:       accessKey,
@@ -255,7 +252,7 @@ func (p *Store) Ping(ctx context.Context) error {
 }
 
 func (s *Store) Origin() string        { return s.host }
-func (s *Store) Root() string          { return s.root }
+func (s *Store) Root() string          { return path.Join("/", s.bucket, s.prefixDir) }
 func (s *Store) Type() string          { return "s3" }
 func (s *Store) Flags() location.Flags { return 0 }
 
