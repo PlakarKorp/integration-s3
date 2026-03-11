@@ -107,10 +107,17 @@ func NewStore(ctx context.Context, proto string, storeConfig map[string]string) 
 		return nil, fmt.Errorf("parse location: %w", err)
 	}
 
+	bucket, prefixDir, _ := strings.Cut(u.RequestURI()[1:], "/")
+	if prefixDir != "" && !strings.HasSuffix(prefixDir, "/") {
+		prefixDir += "/"
+	}
+
 	return &Store{
 		location:        storeConfig["location"],
 		host:            u.Host,
 		root:            u.Path,
+		bucket:          bucket,
+		prefixDir:       prefixDir,
 		accessKey:       accessKey,
 		secretAccessKey: secretAccessKey,
 		useSsl:          useSsl,
@@ -167,19 +174,8 @@ func (s *Store) connect() error {
 }
 
 func (s *Store) Create(ctx context.Context, config []byte) error {
-	parsed, err := url.Parse(s.location)
-	if err != nil {
-		return fmt.Errorf("parse location: %w", err)
-	}
-
-	err = s.connect()
-	if err != nil {
+	if err := s.connect(); err != nil {
 		return fmt.Errorf("connect: %w", err)
-	}
-
-	s.bucket, s.prefixDir, _ = strings.Cut(parsed.RequestURI()[1:], "/")
-	if s.prefixDir != "" && !strings.HasSuffix(s.prefixDir, "/") {
-		s.prefixDir += "/"
 	}
 
 	exists, err := s.minioClient.BucketExists(ctx, s.bucket)
@@ -221,19 +217,8 @@ func (s *Store) Create(ctx context.Context, config []byte) error {
 }
 
 func (s *Store) Open(ctx context.Context) ([]byte, error) {
-	parsed, err := url.Parse(s.location)
-	if err != nil {
-		return nil, fmt.Errorf("parse location: %w", err)
-	}
-
-	err = s.connect()
-	if err != nil {
+	if err := s.connect(); err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
-	}
-
-	s.bucket, s.prefixDir, _ = strings.Cut(parsed.RequestURI()[1:], "/")
-	if s.prefixDir != "" && !strings.HasSuffix(s.prefixDir, "/") {
-		s.prefixDir += "/"
 	}
 
 	exists, err := s.minioClient.BucketExists(ctx, s.bucket)
