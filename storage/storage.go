@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,18 +39,10 @@ import (
 )
 
 type Store struct {
-	minioClient *minio.Client
-	location    string
-	host        string
-	root        string
-	bucket      string
-	prefixDir   string
-
-	useSsl          bool
-	insecure        bool
-	accessKey       string
-	secretAccessKey string
-
+	minioClient  *minio.Client
+	host         string
+	bucket       string
+	prefixDir    string
 	storageClass string
 
 	bufPool sync.Pool
@@ -107,15 +100,35 @@ func NewStore(ctx context.Context, proto string, storeConfig map[string]string) 
 		return nil, fmt.Errorf("parse location: %w", err)
 	}
 
+	bucket, prefixDir, _ := strings.Cut(u.RequestURI()[1:], "/")
+	if prefixDir != "" && !strings.HasSuffix(prefixDir, "/") {
+		prefixDir += "/"
+	}
+
+	transport, err := minio.DefaultTransport(useSsl)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create default transport: %w", err)
+	}
+
+	if insecure {
+		transport.TLSClientConfig.InsecureSkipVerify = true
+	}
+
+	// Initialize minio client object.
+	client, err := minio.New(u.Host, &minio.Options{
+		Creds:     credentials.NewStaticV4(accessKey, secretAccessKey, ""),
+		Secure:    useSsl,
+		Transport: transport,
+	})
+
+	client.SetAppInfo("plakar", "v1.1.0")
+
 	return &Store{
-		location:        storeConfig["location"],
-		host:            u.Host,
-		root:            u.Path,
-		accessKey:       accessKey,
-		secretAccessKey: secretAccessKey,
-		useSsl:          useSsl,
-		insecure:        insecure,
-		storageClass:    storageClass,
+		minioClient:  client,
+		host:         u.Host,
+		bucket:       bucket,
+		prefixDir:    prefixDir,
+		storageClass: storageClass,
 
 		bufPool: sync.Pool{
 			New: func() any {
@@ -137,51 +150,7 @@ func (s *Store) realpath(path string) string {
 	return s.prefixDir + path
 }
 
-func (s *Store) connect() error {
-	useSSL := s.useSsl
-	insecure := s.insecure
-
-	transport, err := minio.DefaultTransport(useSSL)
-	if err != nil {
-		return err
-	}
-
-	if insecure {
-		transport.TLSClientConfig.InsecureSkipVerify = true
-	}
-
-	// Initialize minio client object.
-	minioClient, err := minio.New(s.host, &minio.Options{
-		Creds:     credentials.NewStaticV4(s.accessKey, s.secretAccessKey, ""),
-		Secure:    useSSL,
-		Transport: transport,
-	})
-	if err != nil {
-		return fmt.Errorf("create minio client: %w", err)
-	}
-
-	minioClient.SetAppInfo("plakar", "v1.1.0")
-
-	s.minioClient = minioClient
-	return nil
-}
-
 func (s *Store) Create(ctx context.Context, config []byte) error {
-	parsed, err := url.Parse(s.location)
-	if err != nil {
-		return fmt.Errorf("parse location: %w", err)
-	}
-
-	err = s.connect()
-	if err != nil {
-		return fmt.Errorf("connect: %w", err)
-	}
-
-	s.bucket, s.prefixDir, _ = strings.Cut(parsed.RequestURI()[1:], "/")
-	if s.prefixDir != "" && !strings.HasSuffix(s.prefixDir, "/") {
-		s.prefixDir += "/"
-	}
-
 	exists, err := s.minioClient.BucketExists(ctx, s.bucket)
 	if err != nil {
 		return fmt.Errorf("check if bucket exists: %w", err)
@@ -221,21 +190,6 @@ func (s *Store) Create(ctx context.Context, config []byte) error {
 }
 
 func (s *Store) Open(ctx context.Context) ([]byte, error) {
-	parsed, err := url.Parse(s.location)
-	if err != nil {
-		return nil, fmt.Errorf("parse location: %w", err)
-	}
-
-	err = s.connect()
-	if err != nil {
-		return nil, fmt.Errorf("connect: %w", err)
-	}
-
-	s.bucket, s.prefixDir, _ = strings.Cut(parsed.RequestURI()[1:], "/")
-	if s.prefixDir != "" && !strings.HasSuffix(s.prefixDir, "/") {
-		s.prefixDir += "/"
-	}
-
 	exists, err := s.minioClient.BucketExists(ctx, s.bucket)
 	if err != nil {
 		return nil, fmt.Errorf("error checking if bucket exists: %w", err)
@@ -248,12 +202,12 @@ func (s *Store) Open(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting object: %w", err)
 	}
+	defer object.Close()
 
 	data, err := io.ReadAll(object)
 	if err != nil {
 		return nil, fmt.Errorf("error reading object: %w", err)
 	}
-	object.Close()
 
 	return data, nil
 }
@@ -270,7 +224,7 @@ func (p *Store) Ping(ctx context.Context) error {
 }
 
 func (s *Store) Origin() string        { return s.host }
-func (s *Store) Root() string          { return s.root }
+func (s *Store) Root() string          { return path.Join("/", s.bucket, s.prefixDir) }
 func (s *Store) Type() string          { return "s3" }
 func (s *Store) Flags() location.Flags { return 0 }
 
