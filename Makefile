@@ -28,4 +28,4 @@ install: package
 reinstall: uninstall install
 
 clean:
-	rm -f s3Importer s3Exporter s3Storage s3-*.ptar
+	rm -f s3Importer s3Exporter s3Storage s3_*.ptar
