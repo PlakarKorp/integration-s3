@@ -27,6 +27,12 @@
       "pattern": "^/",
       "description": "bucket path prefix to use"
     },
+    "endpoint": {
+      "type": "string",
+      "default": "",
+      "pattern": "^(https?:\\/\\/)?(([a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|localhost)(:\\d+)?(\\/.*)?$",
+      "description": "S3 endpoint URL"
+    },
     "access_key": {
       "type": "string",
       "minLength": 1,
